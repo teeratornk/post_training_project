@@ -12,9 +12,9 @@ from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 # ----------------------#
 
 load_dotenv()
-MODEL_NAME = os.getenv("HF_MODEL")
+MODEL_NAME = os.getenv("HUGGINGFACE_MODEL_NAME")
 OUTPUT_DIR = "outputs"
-HF_TOKEN = os.getenv("HF_TOKEN")
+HF_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, token=HF_TOKEN)
 model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, token=HF_TOKEN)
@@ -91,7 +91,7 @@ def render_prompt(past_guesses: List[GuessWithFeedback]):
 # ----------------------#
 
 def generate_stream(prompt: str) -> str:
-    outputs = generator(prompt, max_new_tokens=256, temperature=0.0, do_sample=False)
+    outputs = generator(prompt, max_new_tokens=256, do_sample=False)
     completion = outputs[0]["generated_text"][len(prompt):]
     print(completion)
     return completion
