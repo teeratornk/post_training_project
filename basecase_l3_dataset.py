@@ -1,12 +1,15 @@
 import os
 import re
+import json
 from dataclasses import dataclass
 from enum import Enum
 from typing import List
 
 from dotenv import load_dotenv
 from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
+from datasets import load_dataset
 from logger_setup import logger
+from sklearn.model_selection import train_test_split
 
 # ----------------------#
 # 1. ENV & MODEL SETUP  #
@@ -28,7 +31,21 @@ generator = pipeline("text-generation", model=model, tokenizer=tokenizer, device
 logger.info(f"Loaded model: {MODEL_NAME}")
 
 # ----------------------#
-# 2. PROMPT TEMPLATES   #
+# 2. DATASET LOADING    #
+# ----------------------#
+
+dataset = load_dataset("predibase/wordle-grpo", split="train")
+dataset = dataset.to_pandas()
+
+# Inspect dataset columns and a sample row
+print('Dataset columns:', dataset.columns.tolist())
+print('First 3 rows:')
+print(dataset.head(3))
+logger.info(f"Dataset columns: {dataset.columns.tolist()}")
+logger.info(f"First row: {dataset.head(1).to_dict()}")
+
+# ----------------------#
+# 3. PROMPT TEMPLATES   #
 # ----------------------#
 
 SYSTEM_PROMPT = """
@@ -61,7 +78,7 @@ tags. Then, return your guessed word in the following format:
 """
 
 # ----------------------#
-# 3. DATA STRUCTURES    #
+# 4. DATA STRUCTURES    #
 # ----------------------#
 
 class LetterFeedback(Enum):
@@ -79,7 +96,7 @@ class GuessWithFeedback:
         return f"{self.guess} → Feedback: {feedback_str}"
 
 # ----------------------#
-# 4. PROMPT FUNCTIONS   #
+# 5. PROMPT FUNCTIONS   #
 # ----------------------#
 
 def render_user_prompt(past_guesses: List[GuessWithFeedback]) -> str:
@@ -95,7 +112,7 @@ def render_prompt(past_guesses: List[GuessWithFeedback]):
     return SYSTEM_PROMPT + "\n" + render_user_prompt(past_guesses) + "\nLet me solve this step by step.\n<think>"
 
 # ----------------------#
-# 5. MODEL INTERACTION  #
+# 6. MODEL INTERACTION  #
 # ----------------------#
 
 def generate_stream(prompt: str) -> str:
@@ -107,7 +124,7 @@ def generate_stream(prompt: str) -> str:
     return completion
 
 # ----------------------#
-# 6. GAME LOGIC         #
+# 7. GAME LOGIC         #
 # ----------------------#
 
 def get_feedback(guess: str, secret_word: str) -> List[LetterFeedback]:
@@ -156,35 +173,79 @@ def next_turn(
     return True  # Indicate valid guess
 
 # ----------------------#
-# 7. EXAMPLE USAGE      #
+# 8. EXAMPLE USAGE      #
 # ----------------------#
 
-def play_game(secret_word: str):
-    logger.info(f"Starting new game with secret word: {secret_word}")
-    past_guesses = []
-    turn = 1
-    win = False
-    while turn <= 6:
-        print(f"\nTurn {turn}:")
-        valid_guess = next_turn(past_guesses, secret_word)
-        if not valid_guess:
-            logger.warning("No valid guess this turn.")
-            print("No valid guess this turn.")
-        if past_guesses and past_guesses[-1].guess == secret_word:
-            win = True
-            break
-        turn += 1
-    # Summary
-    logger.info(f"Game ended. Win: {win}. Turns: {len(past_guesses)}")
-    print("\n===== GAME SUMMARY =====")
-    print(f"Secret word: {secret_word}")
-    print(f"Result: {'WIN' if win else 'LOSS'} in {len(past_guesses)} turn(s)")
-    print("Guesses:")
-    for i, guess in enumerate(past_guesses, 1):
-        print(f"  {i}: {guess}")
-    return win, len(past_guesses), past_guesses
+# Filter for valid 5-letter words only
+secrets = dataset['secret'].astype(str)
+total_secrets = len(secrets)
+logger.info(f"Total secrets in dataset: {total_secrets}")
+valid_secrets = secrets[secrets.str.len() == 5]
+logger.info(f"Secrets with length 5: {len(valid_secrets)}")
+# Optionally, filter for alphabetic only
+valid_secrets = valid_secrets[valid_secrets.str.isalpha()]
+logger.info(f"Secrets with length 5 and alphabetic only: {len(valid_secrets)}")
+
+# Split into train/validation (80/20 split)
+train_secrets, val_secrets = train_test_split(valid_secrets, test_size=0.2, random_state=42)
+logger.info(f"Train set size: {len(train_secrets)}, Validation set size: {len(val_secrets)}")
+
+def play_game_on_validation(val_secrets):
+    logger.info(f"Validating base model on {len(val_secrets)} secret words.")
+    total = len(val_secrets)
+    success = 0
+    guess_counts = []
+    stats = []
+    for idx, secret_word in enumerate(val_secrets):
+        print(f"\n===== GAME {idx+1} (Secret: {secret_word}) =====")
+        past_guesses = []
+        turn = 1
+        win = False
+        while turn <= 6:
+            print(f"\nTurn {turn}:")
+            valid_guess = next_turn(past_guesses, secret_word)
+            if not valid_guess:
+                logger.warning("No valid guess this turn.")
+                print("No valid guess this turn.")
+            if past_guesses and past_guesses[-1].guess == secret_word:
+                win = True
+                break
+            turn += 1
+        # Summary
+        logger.info(f"Game {idx+1} ended. Win: {win}. Turns: {len(past_guesses)}")
+        print("\n===== GAME SUMMARY =====")
+        print(f"Secret word: {secret_word}")
+        print(f"Result: {'WIN' if win else 'LOSS'} in {len(past_guesses)} turn(s)")
+        print("Guesses:")
+        for i, guess in enumerate(past_guesses, 1):
+            print(f"  {i}: {guess}")
+        stats.append({
+            'secret_word': secret_word,
+            'win': win,
+            'num_guesses': len(past_guesses) if win else None
+        })
+        if win:
+            success += 1
+            guess_counts.append(len(past_guesses))
+    print(f"\nValidation complete. Success: {success}/{total}")
+    if guess_counts:
+        avg_guesses = sum(guess_counts) / len(guess_counts)
+        print(f"Average guesses (for successful games): {avg_guesses:.2f}")
+    else:
+        print("No successful games.")
+    # Save statistics to outputs folder
+    os.makedirs('outputs', exist_ok=True)
+    stats_summary = {
+        'total': total,
+        'success': success,
+        'fail': total - success,
+        'avg_guesses_success': sum(guess_counts) / len(guess_counts) if guess_counts else None,
+        'details': stats
+    }
+    with open(os.path.join('outputs', 'validation_stats.json'), 'w') as f:
+        json.dump(stats_summary, f, indent=2)
+    logger.info(f"Saved validation statistics to outputs/validation_stats.json")
 
 if __name__ == "__main__":
     logger.info("Hugging Face model:")
-    print("Hugging Face model:")
-    play_game("BRICK")
+    play_game_on_validation(val_secrets)

@@ -1,0 +1,12 @@
+$schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
+
+command: >-
+  python basecase_l3_local_dataset.py
+
+environment: azureml:tkad15-kendra-environment@latest
+compute: azureml:tkad15-8-v100-eastus
+experiment_name: basecase_l3_local_dataset
+resources:
+  instance_count: 1
+
+code: .
