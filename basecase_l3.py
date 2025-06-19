@@ -18,6 +18,11 @@ HF_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, token=HF_TOKEN)
 model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, token=HF_TOKEN)
+
+tokenizer.pad_token = tokenizer.eos_token           # reuse EOS as PAD
+tokenizer.pad_token_id = tokenizer.eos_token_id
+model.config.pad_token_id = tokenizer.pad_token_id  # persist in model config
+
 generator = pipeline("text-generation", model=model, tokenizer=tokenizer, device_map="auto")
 
 # ----------------------#
@@ -122,7 +127,8 @@ def next_turn(
         r"<guess>\s*(.*?)\s*</guess>", completion, re.DOTALL
     )
     if not match:
-        raise RuntimeError("invalid guess")
+        print("Warning: Model did not return a valid guess. Skipping this turn.")
+        return False  # Indicate invalid guess, but do not raise
     guess = match.group(1).strip().upper()
     feedback = get_feedback(guess, secret_word)
     past_guesses.append(GuessWithFeedback(guess, feedback))
@@ -134,21 +140,34 @@ def next_turn(
         print("🎉 SUCCESS 🎉")
     elif len(past_guesses) >= 6:
         print("❌ better luck next time... ❌")
+    return True  # Indicate valid guess
 
 # ----------------------#
 # 7. EXAMPLE USAGE      #
 # ----------------------#
 
 def play_game(secret_word: str):
+    """Play a game of Wordle with the given secret word. Returns a tuple (win: bool, turns: int, guesses: List[GuessWithFeedback])."""
     past_guesses = []
+    turn = 1
+    win = False
     while len(past_guesses) < 6:
-        try:
-            next_turn(past_guesses, secret_word)
-        except RuntimeError:
-            print("Model did not return a valid guess. Stopping game.")
-            break
+        print(f"\nTurn {turn}:")
+        valid_guess = next_turn(past_guesses, secret_word)
+        if not valid_guess:
+            print("No valid guess this turn.")
         if past_guesses and past_guesses[-1].guess == secret_word:
+            win = True
             break
+        turn += 1
+    # Summary
+    print("\n===== GAME SUMMARY =====")
+    print(f"Secret word: {secret_word}")
+    print(f"Result: {'WIN' if win else 'LOSS'} in {len(past_guesses)} turn(s)")
+    print("Guesses:")
+    for i, guess in enumerate(past_guesses, 1):
+        print(f"  {i}: {guess}")
+    return win, len(past_guesses), past_guesses
 
 if __name__ == "__main__":
     print("Hugging Face model:")
