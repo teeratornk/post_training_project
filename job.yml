@@ -1,12 +1,19 @@
 $schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
 
 command: >-
-  python basecase_l3_local_dataset.py
+  python grpo_local_data.py
 
 environment: azureml:tkad15-kendra-environment@latest
 compute: azureml:tkad15-8-v100-eastus
-experiment_name: basecase_l3_local_dataset
+experiment_name: grpo_local_data
 resources:
   instance_count: 1
+
+# environment_variables:
+#   PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+
+# distribution:
+#   type: pytorch
+#   process_count_per_instance: 4
 
 code: .
