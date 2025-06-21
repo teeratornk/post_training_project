@@ -248,7 +248,7 @@ def guess_value(prompt: str, completion: str, example: dict) -> float:
         regex = r"<guess>\\s*([\\s\\S]*?)\\s*<\\/guess>$"
         match = re.search(regex, completion, re.DOTALL)
         if match is None or len(match.groups()) != 1:
-            logger.warning('guess_value: Regex did not match or wrong group count')
+            logger.warning(f'guess_value: Regex did not match or wrong group count. Completion: {completion}')
             return 0.0
 
         guess = match.groups()[0].strip()

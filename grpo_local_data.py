@@ -1,3 +1,6 @@
+import os
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+
 # GRPO training script for Wordle using local CSV word list
 # Based on basecase_l3_local_dataset.py, extended for GRPO training
 
@@ -151,10 +154,10 @@ if __name__ == "__main__":
     training_args = GRPOConfig(
         output_dir="outputs/wordle-grpo",
         num_train_epochs=3,  # Number of epochs
-        per_device_train_batch_size=1,  # Batch size per device
+        per_device_train_batch_size=2,  # Batch size per device
         per_device_eval_batch_size=8,   # Batch size for evaluation
         gradient_accumulation_steps=4,       # Simulates batch size of 4
-        num_generations=4,       # Ensure batch size is divisible by generations
+        num_generations=8,       # Ensure batch size is divisible by generations
         learning_rate=1e-5,             # Example learning rate
         logging_steps=10,               # Log every 10 steps
         save_steps=100,                 # Save checkpoint every 100 steps
@@ -177,3 +180,14 @@ if __name__ == "__main__":
     )
     trainer.train()
     logger.info("TRL GRPOTrainer training complete.")
+
+    # Plot training and evaluation loss after training
+    try:
+        from plot_loss import plot_loss
+        log_file = os.path.join(training_args.output_dir, "trainer_state.jsonl")
+        if os.path.exists(log_file):
+            plot_loss(log_file, output_dir=training_args.output_dir)
+        else:
+            logger.warning(f"Log file {log_file} not found. Skipping loss plot.")
+    except Exception as e:
+        logger.warning(f"Could not plot loss curves: {e}")
