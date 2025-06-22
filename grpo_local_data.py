@@ -19,20 +19,21 @@ from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
 from datasets import Dataset, load_dataset
 from trl import GRPOConfig, GRPOTrainer
 import torch
-import torch.distributed as dist
 
-def setup_distributed():
-    if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
-        dist.init_process_group(backend="nccl", init_method="env://")
-        local_rank = int(os.environ["LOCAL_RANK"])
-        torch.cuda.set_device(local_rank)
-        device = torch.device(f"cuda:{local_rank}")
-        logger.info(f"[RANK {os.environ['RANK']}] Using device: {device}")
-    else:
-        local_rank = 0
-        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        logger.info("Distributed not initialized, using default device:", device)
-    return local_rank, device
+# import torch.distributed as dist
+
+# def setup_distributed():
+#     if "RANK" in os.environ and "WORLD_SIZE" in os.environ:
+#         dist.init_process_group(backend="nccl", init_method="env://")
+#         local_rank = int(os.environ["LOCAL_RANK"])
+#         torch.cuda.set_device(local_rank)
+#         device = torch.device(f"cuda:{local_rank}")
+#         logger.info(f"[RANK {os.environ['RANK']}] Using device: {device}")
+#     else:
+#         local_rank = 0
+#         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+#         logger.info("Distributed not initialized, using default device:", device)
+#     return local_rank, device
 
 # ----------------------#
 # 0.1 PROMPT TEMPLATES   #
@@ -153,12 +154,12 @@ if __name__ == "__main__":
     logger.info("Starting GRPO training script.")
     training_args = GRPOConfig(
         output_dir="outputs/wordle-grpo",
-        num_train_epochs=3,  # Number of epochs
-        per_device_train_batch_size=2,  # Batch size per device
+        num_train_epochs=5,  # Number of epochs
+        per_device_train_batch_size=4,  # Batch size per device
         per_device_eval_batch_size=8,   # Batch size for evaluation
-        gradient_accumulation_steps=4,       # Simulates batch size of 4
+        gradient_accumulation_steps=2,       # Simulates batch size of 4
         num_generations=8,       # Ensure batch size is divisible by generations
-        learning_rate=1e-5,             # Example learning rate
+        learning_rate=1e-6,             # Example learning rate
         logging_steps=10,               # Log every 10 steps
         save_steps=100,                 # Save checkpoint every 100 steps
         eval_strategy="steps",   # Evaluate every eval_steps
@@ -169,6 +170,7 @@ if __name__ == "__main__":
         max_prompt_length=512,          # Truncate prompts if needed
         max_completion_length=4096,     # Max length for completions (updated from 32)
         seed=42,                        # Random seed
+        gradient_checkpointing=True,
     )
     trainer = GRPOTrainer(
         model=model,
