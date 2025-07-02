@@ -57,6 +57,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+config/
 config.json
 
 # MyPy
@@ -86,3 +87,4 @@ Desktop.ini
 
 # etc
 tmp.txt
+azureml-in-a-day.ipynb
