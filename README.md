@@ -16,10 +16,11 @@ This project simulates playing the Wordle game using a Hugging Face language mod
 - Outputs validation statistics to `outputs/validation_stats.json` for analysis and Azure ML compatibility.
 - Modular, well-documented codebase for easy customization and extension.
 - **Supports RLHF/GRPO training with Hugging Face TRL:**
-  - Uses `grpo_local_data.py` for RLHF/GRPO training pipeline.
+  - Uses `grpo_local_data.py` and `hf_grpo_example1_accelerate.py`/`hf_grpo_example1_ddp.py` for RLHF/GRPO training pipeline.
   - Integrates custom reward functions and prompt construction.
-  - Compatible with distributed/multi-GPU training (torchrun/accelerate).
+  - Compatible with distributed/multi-GPU training (torchrun/accelerate/AzureML DDP).
   - Azure ML job submission via `job.yml` and `submit_job.sh`.
+  - Supports logging to TensorBoard and Weights & Biases (wandb) for training monitoring.
 
 ## Requirements
 - Python 3.7+
@@ -64,21 +65,36 @@ python basecase_l3_local_dataset.py
 This script loads `five_letter_words.csv`, filters and splits the data, and evaluates model performance on the validation set. Statistics are saved to `outputs/validation_stats.json`.
 
 ### RLHF/GRPO Training (Distributed, Multi-GPU, Azure ML Compatible)
-- Edit `grpo_local_data.py` to set your model, reward function, and training parameters.
+- Edit `grpo_local_data.py`, `hf_grpo_example1_accelerate.py`, or `hf_grpo_example1_ddp.py` to set your model, reward function, and training parameters.
 - Submit distributed/multi-GPU jobs on Azure ML using `job.yml` and `submit_job.sh`:
   - `job.yml` is pre-configured for multi-node, multi-GPU training with either `torchrun` or `accelerate`.
-  - Example command for 2 nodes × 8 GPUs each:
+  - Example command for 2 nodes × 8 GPUs each (Accelerate):
     ```yaml
     command: >-
-      accelerate launch --num_processes 8 --main_process_port 29510 grpo_local_data.py
+      accelerate launch --config_file acc_config.yaml grpo_local_data.py
+    resources:
+      instance_count: 2
+    ```
+  - To use the DDP script:
+    ```yaml
+    command: >-
+      python hf_grpo_example1_ddp.py
     resources:
       instance_count: 2
     distribution:
       type: pytorch
       process_count_per_instance: 8
     ```
-  - Adjust batch size, gradient accumulation, and `num_generations` in `grpo_local_data.py` as needed to avoid batch size errors.
+  - To use the Accelerate script:
+    ```yaml
+    command: >-
+      accelerate launch --config_file acc_config.yaml hf_grpo_example1_accelerate.py
+    resources:
+      instance_count: 2
+    ```
+  - Adjust batch size, gradient accumulation, and `num_generations` in your script as needed to avoid batch size errors.
   - All logs and outputs are saved in the `outputs/` directory for Azure ML compatibility.
+  - For wandb logging, set the `WANDB_API_KEY` and (optionally) `WANDB_PROJECT` environment variables in your AzureML job/environment.
 
 ## Customization
 - To change the secret word, modify the argument in the `play_game()` function at the bottom of `basecase_l3.py`.
@@ -107,6 +123,9 @@ This script loads `five_letter_words.csv`, filters and splits the data, and eval
 - **job.yml:** Azure ML job configuration for distributed/multi-GPU jobs.
 - **requirements.txt:** Python dependencies.
 - **README.md:** Project documentation and instructions.
+- **hf_grpo_example1.py:** Example script to demonstrate GRPO fine-tuning workflow.
+- **hf_grpo_example1_ddp.py:** DDP-compatible GRPO training script for AzureML PyTorch distributed jobs. Logs to TensorBoard and wandb.
+- **hf_grpo_example1_accelerate.py:** Accelerate-compatible GRPO training script for multi-GPU/Accelerate jobs. Logs to TensorBoard and wandb.
 
 ## Outputs
 - **outputs/reward_functions.log:** Centralized log file for all activities and errors.
@@ -130,3 +149,14 @@ This project is provided as-is for educational and research purposes.
 
 ## Acknowledgements
 This project is inspired by the online course [Reinforcement Fine-Tuning LLMs with GRPO](https://learn.deeplearning.ai/courses/reinforcement-fine-tuning-llms-grpo/) from DeepLearning.AI.
+
+## hf_grpo_example1.py, hf_grpo_example1_ddp.py, and hf_grpo_example1_accelerate.py
+
+### hf_grpo_example1.py
+This script demonstrates how to fine-tune a Huggingface causal language model using GRPO (Generalized Reinforcement Policy Optimization) on the TLDR dataset. It loads environment variables from a `.env` file for Huggingface credentials and model selection, splits the dataset into training and validation sets using Huggingface's built-in split syntax, and defines a reward function that encourages completions close to 20 characters. The script disables sliding window attention if present, tracks the best model based on validation reward, and saves the best checkpoint in the `outputs` folder for Azure ML compatibility.
+
+### hf_grpo_example1_ddp.py
+DDP-compatible GRPO training script for AzureML PyTorch distributed jobs. Logs to TensorBoard and wandb. Use this script with AzureML's `distribution` block for multi-GPU training.
+
+### hf_grpo_example1_accelerate.py
+Accelerate-compatible GRPO training script for multi-GPU/Accelerate jobs. Logs to TensorBoard and wandb. Use this script with `accelerate launch` and optionally a config file (e.g., `acc_config.yaml`).

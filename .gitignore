@@ -57,6 +57,7 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+config.json
 
 # MyPy
 .mypy_cache/

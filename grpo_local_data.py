@@ -115,9 +115,10 @@ HF_TOKEN = os.getenv("HUGGINGFACE_TOKEN").strip()
 # local_rank, device = setup_distributed()
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, token=HF_TOKEN)
+# model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, token=HF_TOKEN)
 model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, token=HF_TOKEN, device_map="auto")
 
-# .to(device)
+model.train()  # Ensure model is in training mode for gradient checkpointing
 
 tokenizer.pad_token = tokenizer.eos_token           # reuse EOS as PAD
 tokenizer.pad_token_id = tokenizer.eos_token_id
@@ -131,20 +132,74 @@ logger.info(f"Loaded model: {MODEL_NAME}")
 
 
 # Reward function for GRPOTrainer
-def wordle_reward_func(completions, prompts=None, secret_word=None, **kwargs):
+# def wordle_reward_func(completions, prompts=None, secret_word=None, **kwargs):
+#     rewards = []
+#     # Log completions for this batch
+#     logger.info(f"Completions in batch: {completions}")
+#     # Warn if all completions are identical
+#     if len(set(completions)) == 1:
+#         logger.warning(f"All completions in batch are identical: {completions[0]}")
+#     for i, completion in enumerate(completions):
+#         example = {
+#             'word_list': 'five_letter_words.csv',
+#             'past_guess_history': '[]',
+#             'secret_word': secret_word[i] if secret_word is not None else None
+#         }
+#         format_reward = output_format_check(prompts[i] if prompts else '', completion, example)
+#         feedback_reward = uses_previous_feedback(prompts[i] if prompts else '', completion, example)
+#         info_gain_reward = guess_value(prompts[i] if prompts else '', completion, example)
+#         reward = format_reward + feedback_reward + info_gain_reward
+#         logger.info(f"Reward for completion {i}: {reward} (format: {format_reward}, feedback: {feedback_reward}, info_gain: {info_gain_reward})")
+#         rewards.append(reward)
+#     logger.info(f"Rewards for batch: {rewards}")
+#     return rewards
+
+# Reward function for GRPOTrainer
+def wordle_reward_func(completions, prompts=None, secret_word=None, past_guess_history=None, **kwargs):
     rewards = []
+
+    # Initialize past_guess_history if it's the first iteration
+    if past_guess_history is None:
+        past_guess_history = []
+
+    # Log completions for this batch (consider logging only a subset for large batches)
+    logger.info(f"Completions in batch: {completions[:5]}")  # Log first 5 completions if batch is large
+    
+    # Warn if all completions are identical
+    if len(set(completions)) == 1:
+        logger.warning(f"All completions in batch are identical: {completions[0]}")
+
     for i, completion in enumerate(completions):
+        # Prepare example with the correct past_guess_history
         example = {
             'word_list': 'five_letter_words.csv',
-            'past_guess_history': '[]',
+            'past_guess_history': past_guess_history,  # Pass the actual history here
             'secret_word': secret_word[i] if secret_word is not None else None
         }
+
+        # Call the reward functions
         format_reward = output_format_check(prompts[i] if prompts else '', completion, example)
         feedback_reward = uses_previous_feedback(prompts[i] if prompts else '', completion, example)
         info_gain_reward = guess_value(prompts[i] if prompts else '', completion, example)
+
+        # Calculate total reward
         reward = format_reward + feedback_reward + info_gain_reward
+
+        # Log reward details
+        logger.info(f"Reward for completion {i}: {reward} (format: {format_reward}, feedback: {feedback_reward}, info_gain: {info_gain_reward})")
+        
         rewards.append(reward)
+
+        # After calculating the reward, update past_guess_history with the current guess and feedback
+        feedback = output_format_check(prompts[i] if prompts else '', completion, example)  # Get the feedback
+        past_guess_history.append((completion, feedback))  # Add the current guess and its feedback
+
+    # Log summary of rewards for the batch
+    logger.info(f"Rewards for batch: {rewards[:5]}")  # Log first 5 rewards if batch is large
+    logger.info(f"Max reward: {max(rewards)}, Min reward: {min(rewards)}")  # Log max and min rewards in the batch
+    
     return rewards
+
 
 # ----------------------#
 # 4. MAIN               #
@@ -168,9 +223,14 @@ if __name__ == "__main__":
         fp16=True,                      # Use fp16
         remove_unused_columns=False,    # Keep all columns for custom reward
         max_prompt_length=512,          # Truncate prompts if needed
-        max_completion_length=4096,     # Max length for completions (updated from 32)
+        max_completion_length=1024,     # Max length for completions (updated from 32)
         seed=42,                        # Random seed
-        gradient_checkpointing=True,
+        gradient_checkpointing=False,
+        save_strategy="steps",
+        load_best_model_at_end=True,
+        metric_for_best_model="eval_loss",  # or your custom metric
+        greater_is_better=False,            # True if using reward as metric
+        logging_dir="outputs/wordle-grpo/logs",
     )
     trainer = GRPOTrainer(
         model=model,

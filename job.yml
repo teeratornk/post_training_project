@@ -1,19 +1,19 @@
 $schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
 
 command: >-
-  python grpo_local_data.py
+  python hf_grpo_example1_ddp.py
 
-environment: azureml:tkad15-kendra-environment@latest
-compute: azureml:tkad15-8-v100-eastus
-experiment_name: grpo_local_data
+environment: azureml:tkad15-grpo@latest
+compute: azureml:tkad15-8-v100-westus2
+experiment_name: hf_grpo_example1_with_ddp
 resources:
   instance_count: 1
 
-# environment_variables:
-#   PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+environment_variables:
+  PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
 
-# distribution:
-#   type: pytorch
-#   process_count_per_instance: 4
-
+distribution:
+  type: pytorch
+  process_count_per_instance: 4
+# accelerate launch --config_file acc_config.yaml hf_grpo_example1_accelerate.py
 code: .
