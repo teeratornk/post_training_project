@@ -105,7 +105,7 @@ train_dataset = Dataset.from_pandas(train_df)
 val_dataset = Dataset.from_pandas(val_df)
 
 # ----------------------#
-# 3. MODEL SETUP        #
+# 2. MODEL SETUP        #
 # ----------------------#
 
 load_dotenv()
@@ -129,30 +129,6 @@ logger.info(f"Loaded model: {MODEL_NAME}")
 # ----------------------#
 # 3. REWARD             #
 # ----------------------#
-
-
-# Reward function for GRPOTrainer
-# def wordle_reward_func(completions, prompts=None, secret_word=None, **kwargs):
-#     rewards = []
-#     # Log completions for this batch
-#     logger.info(f"Completions in batch: {completions}")
-#     # Warn if all completions are identical
-#     if len(set(completions)) == 1:
-#         logger.warning(f"All completions in batch are identical: {completions[0]}")
-#     for i, completion in enumerate(completions):
-#         example = {
-#             'word_list': 'five_letter_words.csv',
-#             'past_guess_history': '[]',
-#             'secret_word': secret_word[i] if secret_word is not None else None
-#         }
-#         format_reward = output_format_check(prompts[i] if prompts else '', completion, example)
-#         feedback_reward = uses_previous_feedback(prompts[i] if prompts else '', completion, example)
-#         info_gain_reward = guess_value(prompts[i] if prompts else '', completion, example)
-#         reward = format_reward + feedback_reward + info_gain_reward
-#         logger.info(f"Reward for completion {i}: {reward} (format: {format_reward}, feedback: {feedback_reward}, info_gain: {info_gain_reward})")
-#         rewards.append(reward)
-#     logger.info(f"Rewards for batch: {rewards}")
-#     return rewards
 
 # Reward function for GRPOTrainer
 def wordle_reward_func(completions, prompts=None, secret_word=None, past_guess_history=None, **kwargs):

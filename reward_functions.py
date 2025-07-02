@@ -18,56 +18,6 @@ WRONG_LETTER_PENALTY = -0.5
 EXPLORATION_REWARD = 0.05
 
 
-# def output_format_check(prompt: str, completion: str, example: dict) -> float:
-#     """
-#     Checks if the completion output is in the correct format and if the guess is a valid word.
-#     Returns a reward score based on format and validity.
-#     """
-
-#     reward = 0
-#     try:
-#         logger.info('Running output_format_check')
-#         # Add synthetic <think> as it's already part of the prompt and prefilled 
-#         # for the assistant to more easily match the regex
-#         completion = "<think>" + completion
-
-#         # Check if the format matches expected pattern:
-#         # <think> content </think> followed by <answer> content </answer>
-#         # regex = (
-#         #     r"^<think>\s*([^<]*(?:<(?!/?think>)[^<]*)*)\s*<\/think>\s*\n?"
-#         #     r"<guess>\s*([\s\S]*?)\s*<\/guess>$"
-#         # )
-#         regex = r"<think>.*?<\/think>\s*<guess>\s*([\w]+)\s*<\/guess>"
-
-#         # Search for the regex in the completion
-#         match = re.search(regex, completion, re.DOTALL)
-#         if match is None or len(match.groups()) != 2:
-#             logger.warning(f'output_format_check: Regex did not match or wrong group count. Completion: {completion}')
-#             return 0.0
-
-#         guess = match.groups()[1]
-#         guess = guess.strip()
-
-#         # If the word is not 5 characters, return 0.1
-#         if len(guess) != 5:
-#             logger.info(f'output_format_check: Guess length not 5: {guess}. Completion: {completion}')
-#             return 0.1
-
-#         # Check if the guess is a valid word compared to a predifined list of words
-#         word_list = pd.read_csv(str(example["word_list"]))
-#         if guess not in word_list["Word"].values:
-#             logger.info(f'output_format_check: Guess not in word list: {guess}. Completion: {completion}')
-#             return 0.5
-
-#         reward = 1.0
-#         logger.info(f'output_format_check: Success, guess={guess}, reward={reward}')
-#     except Exception as e:
-#         logger.error(f"Exception in output_format_check: {e}")
-#         return 0.0
-
-#     return reward
-
-
 def output_format_check(prompt: str, completion: str, example: dict) -> float:
     """
     Checks if the completion output is in the correct format and if the guess is a valid word.
@@ -186,82 +136,6 @@ def uses_previous_feedback(prompt: str, completion: str, example: dict) -> float
 
     return reward
 
-
-
-# # Reward function that checks if the guess uses the previous feedback for its next guess
-# def uses_previous_feedback(prompt: str, completion: str, example: dict) -> float:
-#     """
-#     Rewards guesses that make good use of previous feedback.
-#     Returns a cumulative reward based on letter positions and exploration.
-#     """
-
-
-#     reward = 0
-#     try:
-#         logger.info('Running uses_previous_feedback')
-#         # Add synthetic <think> as it's already part of the prompt and prefilled 
-#         # for the assistant to more easily match the regex
-#         completion = "<think>" + completion
-
-#         # Extract the guess from the completion
-#         regex = r"<guess>\\s*([\\s\\S]*?)\\s*<\\/guess>$"
-#         match = re.search(regex, completion, re.DOTALL)
-#         if match is None or len(match.groups()) != 1:
-#             logger.warning(f'uses_previous_feedback: Regex did not match or wrong group count. Completion: {completion}')
-#             return 0.0
-
-#         guess = match.groups()[0].strip()
-#         if len(guess) != 5:
-#             logger.info(f'uses_previous_feedback: Guess length not 5: {guess}. Completion: {completion}')
-#             return 0.0
-
-#         past_guess_history = ast.literal_eval(example["past_guess_history"])
-#         if len(past_guess_history) == 0:
-#             logger.info('uses_previous_feedback: No past guesses')
-#             return 0.1
-
-#         correct_letter_to_position = {}
-#         valid_letter_to_position = {}
-#         wrong_letter_to_position = {}
-#         for _, past_feedback in past_guess_history:
-#             past_feedback = past_feedback.split(" ")
-#             for i, fb in enumerate(past_feedback):
-#                 if '✓' in fb:
-#                     if fb[0] not in correct_letter_to_position:
-#                         correct_letter_to_position[fb[0]] = set()
-#                     correct_letter_to_position[fb[0]].add(i)
-#                 elif '-' in fb:
-#                     if fb[0] not in valid_letter_to_position:
-#                         valid_letter_to_position[fb[0]] = set()
-#                     valid_letter_to_position[fb[0]].add(i)
-#                 else:
-#                     if fb[0] not in wrong_letter_to_position:
-#                         wrong_letter_to_position[fb[0]] = set()
-#                     wrong_letter_to_position[fb[0]].add(i)
-
-#         for idx, letter in enumerate(guess):
-#             # Positive reward if guess reuses letter in confirmed correct position
-#             if (letter in correct_letter_to_position and idx in correct_letter_to_position[letter]):
-#                 reward += CORRECT_POSITION_REWARD
-#             # Reward if letter known to be in word is used in a new position
-#             elif (letter in valid_letter_to_position and idx not in valid_letter_to_position[letter]):
-#                 reward += NEW_POSITION_REWARD
-#             # Penalize reuse of known-in-word letter in same position (not exploring)
-#             elif (letter in valid_letter_to_position and idx in valid_letter_to_position[letter]):
-#                 reward += REPEATED_POSITION_PENALTY
-#             # Penalize use of known-absent letter
-#             elif letter in wrong_letter_to_position:
-#                 reward += WRONG_LETTER_PENALTY
-#             else:
-#                 # Reward unknown letters with partial credit for exploration
-#                 reward += EXPLORATION_REWARD
-
-#         logger.info(f'uses_previous_feedback: guess={guess}, reward={reward}')
-#     except Exception as e:
-#         logger.error(f"Exception in uses_previous_feedback: {e}")
-#         return 0.0
-
-#     return reward
 
 
 # Reward function that computes normalized information gain of the guess, i.e.,
