@@ -117,6 +117,22 @@ This script loads `five_letter_words.csv`, filters and splits the data, and eval
   - Allows configuration of batch size, gradient accumulation, number of generations, and other hyperparameters.
   - Centralizes logging and outputs all logs, checkpoints, and statistics to the `outputs/` directory for Azure ML workflows.
   - Is ready for further customization and extension for new reward functions, datasets, or training strategies.
+- **grpo_local_data_modular.py:** Modular RLHF/GRPO training script for Wordle. This script:
+  - Loads and filters the Hugging Face Wordle dataset for valid 5-letter words, splits into train/validation sets, and constructs prompts.
+  - Sets up the model and tokenizer from Hugging Face Hub using environment variables.
+  - Defines modular reward functions (output format, feedback usage, information gain) for RLHF.
+  - Integrates with Hugging Face TRL's `GRPOTrainer` for RLHF/GRPO training, supporting custom reward logic.
+  - Allows configuration of batch size, gradient accumulation, number of generations, temperature, and other hyperparameters.
+  - Centralizes logging and outputs all logs, checkpoints, and statistics to the `outputs/` directory.
+  - Plots and saves training/evaluation loss curves after training.
+  - Designed for easy extension and experimentation with new reward functions, datasets, or training strategies.
+- **grpo_local_data_sensitivity_temperature.py:** Script for sensitivity analysis of the temperature parameter in GRPO training. This script:
+  - Loops over a range of temperature values (e.g., 0.7, 1.0, 1.2, 1.5, 2.0) and runs a full training session for each.
+  - For each temperature, re-initializes the model and tokenizer to ensure independent runs.
+  - Explicitly deletes model, tokenizer, and trainer objects and calls garbage collection and CUDA memory cleanup after each run to prevent GPU memory leaks.
+  - Calls `wandb.finish()` after each run to ensure separate Weights & Biases runs for each temperature.
+  - Plots and saves training/evaluation loss curves for each temperature in separate output directories.
+  - Useful for analyzing the effect of temperature on model diversity and performance in RLHF/GRPO training.
 - **reward_functions.py:** Contains reward functions for evaluating model guesses, including output format checking, use of previous feedback, and information gain.
 - **logger_setup.py:** Sets up a reusable logger for the project, writing logs to `outputs/reward_functions.log`.
 - **five_letter_words.csv:** Example local word list for validation.

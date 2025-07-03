@@ -21,6 +21,7 @@ from trl import GRPOConfig, GRPOTrainer
 import torch
 import datetime
 import wandb
+import gc
 
 # ----------------------#
 # 0. UTILS              #
@@ -134,10 +135,7 @@ if __name__ == "__main__":
     logger.info("Starting sensitivity analysis for temperature values...")
     temperature_values = [0.7, 1.0, 1.2, 1.5, 2.0]
     for temp in temperature_values:
-        # Clear GPU memory before each run
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
+
         logger.info(f"Running training with temperature={temp}")
         # Re-initialize model and tokenizer for each temperature
         model, tokenizer = setup_model_and_tokenizer()
@@ -199,7 +197,7 @@ if __name__ == "__main__":
         del trainer
         del model
         del tokenizer
-        import gc
+        
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
