@@ -1,13 +1,13 @@
 $schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
 
 command: >-
-  python grpo_local_data_modular.py
+  python grpo_local_data_sensitivity_temperature.py
 
 environment: azureml:tkad15-grpo@latest
 compute: azureml:tkad15-8-v100-westus2
-experiment_name: grpo_local_data_modular
+experiment_name: grpo_sen_temperature
 resources:
-  instance_count: 1
+  instance_count: 2
 
 environment_variables:
   PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"

@@ -20,6 +20,7 @@ from datasets import Dataset, load_dataset
 from trl import GRPOConfig, GRPOTrainer
 import torch
 import datetime
+import wandb
 
 # ----------------------#
 # 0. UTILS              #
@@ -129,71 +130,88 @@ if __name__ == "__main__":
     train_dataset, val_dataset = load_and_prepare_data()
     logger.info("Data loaded and prepared.")
 
-    logger.info("Setting up model and tokenizer...")
-    model, tokenizer = setup_model_and_tokenizer()
-    logger.info("Model and tokenizer setup complete.")
+    # Sensitivity analysis: try a range of temperature values
+    logger.info("Starting sensitivity analysis for temperature values...")
+    temperature_values = [0.7, 1.0, 1.2, 1.5, 2.0]
+    for temp in temperature_values:
+        # Clear GPU memory before each run
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+        logger.info(f"Running training with temperature={temp}")
+        # Re-initialize model and tokenizer for each temperature
+        model, tokenizer = setup_model_and_tokenizer()
+        def reward_func_with_model(*args, **kwargs):
+            return wordle_reward_func(*args, model=model, tokenizer=tokenizer, **kwargs)
+        reward_func_with_model.__name__ = "wordle_reward_func"
+        training_args = GRPOConfig(
+            output_dir=f"outputs/wordle-grpo-temp{temp}",
+            num_train_epochs=10,  # Number of epochs
+            per_device_train_batch_size=4,  # Batch size per device
+            per_device_eval_batch_size=8,   # Batch size for evaluation
+            gradient_accumulation_steps=2,       # Simulates batch size of 4
+            num_generations=8,       # Ensure batch size is divisible by generations
+            learning_rate=1e-6,             # Example learning rate
+            logging_steps=10,               # Log every 10 steps
+            save_steps=100,                 # Save checkpoint every 100 steps
+            eval_strategy="steps",   # Evaluate every eval_steps
+            eval_steps=50,                  # Evaluate every 50 steps
+            bf16=False,                     # Disable bfloat16 (A100 only)
+            fp16=True,                      # Use fp16
+            remove_unused_columns=False,    # Keep all columns for custom reward
+            max_prompt_length=2048,          # Truncate prompts if needed
+            max_completion_length=4096,     # Max length for completions (updated from 32)
+            seed=42,                        # Random seed
+            gradient_checkpointing=False,
+            save_strategy="steps",
+            load_best_model_at_end=True,
+            metric_for_best_model="eval_loss",  # or your custom metric
+            greater_is_better=False,            # True if using reward as metric
+            logging_dir=f"outputs/wordle-grpo-temp{temp}/logs",
+            report_to=["tensorboard", "wandb"],  # Enable logging to TensorBoard and WandB
+            run_name=f"wordle-grpo-temp{temp}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
+            temperature=temp,  # Vary temperature
+            top_p=0.95,       # Nucleus sampling for diversity
+            top_k=40,         # Top-k sampling for diversity
+            repetition_penalty=1.1,  # Slight penalty to discourage repeats
+            generation_kwargs={
+                "temperature": temp,
+                "top_p": 0.95,
+                "top_k": 40,
+                "repetition_penalty": 1.1
+            }
+        )
+        trainer = GRPOTrainer(
+            model=model,
+            reward_funcs=reward_func_with_model,
+            args=training_args,
+            train_dataset=train_dataset,
+            eval_dataset=val_dataset,
+            processing_class=tokenizer,  # ensure correct tokenization
+        )
+        trainer.train()
+        logger.info(f"TRL GRPOTrainer training complete for temperature={temp}.")
+        try:
+            wandb.finish()
+        except ImportError:
+            logger.warning("wandb not installed; skipping wandb.finish().")
+        # Explicitly delete objects and collect garbage to free GPU memory
+        del trainer
+        del model
+        del tokenizer
+        import gc
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
 
-    def reward_func_with_model(*args, **kwargs):
-        return wordle_reward_func(*args, model=model, tokenizer=tokenizer, **kwargs)
-    reward_func_with_model.__name__ = "wordle_reward_func"
-
-    logger.info("Starting GRPO training script.")
-    
-    training_args = GRPOConfig(
-        output_dir="outputs/wordle-grpo",
-        num_train_epochs=5,  # Number of epochs
-        per_device_train_batch_size=4,  # Batch size per device
-        per_device_eval_batch_size=8,   # Batch size for evaluation
-        gradient_accumulation_steps=2,       # Simulates batch size of 4
-        num_generations=8,       # Ensure batch size is divisible by generations
-        learning_rate=1e-6,             # Example learning rate
-        logging_steps=10,               # Log every 10 steps
-        save_steps=100,                 # Save checkpoint every 100 steps
-        eval_strategy="steps",   # Evaluate every eval_steps
-        eval_steps=50,                  # Evaluate every 50 steps
-        bf16=False,                     # Disable bfloat16 (A100 only)
-        fp16=True,                      # Use fp16
-        remove_unused_columns=False,    # Keep all columns for custom reward
-        max_prompt_length=2048,          # Truncate prompts if needed
-        max_completion_length=4096,     # Max length for completions (updated from 32)
-        seed=42,                        # Random seed
-        gradient_checkpointing=False,
-        save_strategy="steps",
-        load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",  # or your custom metric
-        greater_is_better=False,            # True if using reward as metric
-        logging_dir="outputs/wordle-grpo/logs",
-        report_to=["tensorboard", "wandb"],  # Enable logging to TensorBoard and WandB
-        run_name=f"wordle-grpo-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        temperature=2.0,  # Encourage more exploration
-        top_p=0.95,       # Nucleus sampling for diversity
-        top_k=40,         # Top-k sampling for diversity
-        repetition_penalty=1.1,  # Slight penalty to discourage repeats
-        generation_kwargs={
-            "temperature": 2.0,
-            "top_p": 0.95,
-            "top_k": 40,
-            "repetition_penalty": 1.1
-        }
-    )
-    trainer = GRPOTrainer(
-        model=model,
-        reward_funcs=reward_func_with_model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=val_dataset,
-        processing_class=tokenizer,  # ensure correct tokenization
-    )
-    trainer.train()
-    logger.info("TRL GRPOTrainer training complete.")
-
-    # Plot training and evaluation loss after training
-    try:
-        from plot_loss import plot_loss
-        log_file = os.path.join(training_args.output_dir, "trainer_state.jsonl")
-        if os.path.exists(log_file):
-            plot_loss(log_file, output_dir=training_args.output_dir)
-        else:
-            logger.warning(f"Log file {log_file} not found. Skipping loss plot.")
-    except Exception as e:
-        logger.warning(f"Could not plot loss curves: {e}")
+        # Plot training and evaluation loss after training
+        try:
+            from plot_loss import plot_loss
+            log_file = os.path.join(training_args.output_dir, "trainer_state.jsonl")
+            if os.path.exists(log_file):
+                plot_loss(log_file, output_dir=training_args.output_dir)
+            else:
+                logger.warning(f"Log file {log_file} not found. Skipping loss plot.")
+        except Exception as e:
+            logger.warning(f"Could not plot loss curves for temperature={temp}: {e}")
