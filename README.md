@@ -96,6 +96,37 @@ This script loads `five_letter_words.csv`, filters and splits the data, and eval
   - All logs and outputs are saved in the `outputs/` directory for Azure ML compatibility.
   - For wandb logging, set the `WANDB_API_KEY` and (optionally) `WANDB_PROJECT` environment variables in your AzureML job/environment.
 
+### Launch Temperature Sweep
+- **launch_temperature_sweep.py:** Launches a temperature sweep by running each temperature value sequentially as a subprocess on the same Azure ML node. Each run is executed one after another, sharing the same resources.
+- **grpo_local_data_sensitivity_temperature_subprocess.py:** Modified version of the sensitivity analysis script that accepts a `--temperature` argument and runs a single temperature value per process. Designed for use with subprocess-based or Azure ML job-based sweeps.
+- **launch_klbeta_sweep.py:** Launches a KL beta sweep by running each beta value sequentially as a subprocess. Each run is executed one after another, sharing the same resources. Edit the `betas` list in this script to set the desired beta values.
+- **grpo_local_data_sensitivity_klbeta_subprocess.py:** Modified version of the sensitivity analysis script that accepts a `--beta` argument and runs a single KL beta value per process. This script sets the `beta` parameter in `GRPOConfig` to include the KL divergence term, enabling experiments on the effect of KL regularization.
+- **launch_temperature_sweep_azureml.py:** Submits a separate Azure ML job for each temperature value using the Azure ML Python SDK. Each job runs `grpo_local_data_sensitivity_temperature_subprocess.py` with a different `--temperature` argument, allowing jobs to be distributed across multiple nodes/VMs in your Azure ML compute cluster. This is the recommended approach for running each temperature on a separate node in parallel.
+
+#### How to use `launch_temperature_sweep_azureml.py`
+1. Ensure you have a valid `config.json` for your Azure ML workspace in your project directory.
+2. Make sure your Azure ML environment (`tkad15-grpo`) and compute target (`tkad15-8-v100-westus2`) exist.
+3. Install the Azure ML Python SDK if needed: `pip install azureml-core`.
+4. Run the script:
+   ```pwsh
+   python launch_temperature_sweep_azureml.py
+   ```
+5. Each temperature value will be submitted as a separate job to Azure ML, and jobs will be distributed across available nodes in your compute cluster. Monitor progress in Azure ML Studio.
+
+#### How to use KL Beta Sweep
+1. Edit `launch_klbeta_sweep.py` to set the desired KL beta values in the `betas` list.
+2. Run the script:
+   ```pwsh
+   python launch_klbeta_sweep.py
+   ```
+3. Each beta value will be run as a separate subprocess, executing `grpo_local_data_sensitivity_klbeta_subprocess.py` with the corresponding `--beta` argument. Outputs and logs are saved in separate directories for each beta value.
+
+#### How to use `grpo_local_data_sensitivity_klbeta_subprocess.py` manually
+To run a single KL beta experiment:
+```pwsh
+python grpo_local_data_sensitivity_klbeta_subprocess.py --beta 0.1
+```
+
 ## Customization
 - To change the secret word, modify the argument in the `play_game()` function at the bottom of `basecase_l3.py`.
 - To use a different Hugging Face model, update the `HUGGINGFACE_MODEL_NAME` in your `.env` file.
@@ -133,6 +164,11 @@ This script loads `five_letter_words.csv`, filters and splits the data, and eval
   - Calls `wandb.finish()` after each run to ensure separate Weights & Biases runs for each temperature.
   - Plots and saves training/evaluation loss curves for each temperature in separate output directories.
   - Useful for analyzing the effect of temperature on model diversity and performance in RLHF/GRPO training.
+- **launch_temperature_sweep.py:** Launches a temperature sweep by running each temperature value sequentially as a subprocess on the same Azure ML node. Each run is executed one after another, sharing the same resources.
+- **grpo_local_data_sensitivity_temperature_subprocess.py:** Modified version of the sensitivity analysis script that accepts a `--temperature` argument and runs a single temperature value per process. Designed for use with subprocess-based or Azure ML job-based sweeps.
+- **launch_klbeta_sweep.py:** Launches a KL beta sweep by running each beta value sequentially as a subprocess. Each run is executed one after another, sharing the same resources. Edit the `betas` list in this script to set the desired beta values.
+- **grpo_local_data_sensitivity_klbeta_subprocess.py:** Modified version of the sensitivity analysis script that accepts a `--beta` argument and runs a single KL beta value per process. This script sets the `beta` parameter in `GRPOConfig` to include the KL divergence term, enabling experiments on the effect of KL regularization.
+- **launch_temperature_sweep_azureml.py:** Submits a separate Azure ML job for each temperature value using the Azure ML Python SDK. Each job runs `grpo_local_data_sensitivity_temperature_subprocess.py` with a different `--temperature` argument, allowing jobs to be distributed across multiple nodes/VMs in your Azure ML compute cluster. This is the recommended approach for running each temperature on a separate node in parallel.
 - **reward_functions.py:** Contains reward functions for evaluating model guesses, including output format checking, use of previous feedback, and information gain.
 - **logger_setup.py:** Sets up a reusable logger for the project, writing logs to `outputs/reward_functions.log`.
 - **five_letter_words.csv:** Example local word list for validation.

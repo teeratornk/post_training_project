@@ -1,11 +1,11 @@
 $schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
 
 command: >-
-  python grpo_local_data_sensitivity_temperature.py
+  python launch_temperature_sweep.py
 
 environment: azureml:tkad15-grpo@latest
-compute: azureml:tkad15-8-v100-westus2
-experiment_name: grpo_sen_temperature
+compute: azureml:tkad15-8-v100-sc
+experiment_name: temp17
 resources:
   instance_count: 2
 

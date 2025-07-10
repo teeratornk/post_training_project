@@ -1,10 +1,8 @@
 import os
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
-# GRPO training script for Wordle using local CSV word list
-# Based on basecase_l3_local_dataset.py, extended for GRPO training
-
-import os
+import sys
+import argparse
 import re
 import json
 import pandas as pd
@@ -20,15 +18,10 @@ from datasets import Dataset, load_dataset
 from trl import GRPOConfig, GRPOTrainer
 import torch
 import datetime
-
-# ----------------------#
-# 0. UTILS              #
-# ----------------------#
+import wandb
+import gc
 
 def inspect_data(train_df, val_df, n=3):
-    """
-    Print basic info and show the first n rows of train and validation DataFrames.
-    """
     logger.info(f"Train DataFrame shape: {train_df.shape}")
     logger.info(f"Validation DataFrame shape: {val_df.shape}")
     print("\n--- Train DataFrame Sample ---")
@@ -36,66 +29,35 @@ def inspect_data(train_df, val_df, n=3):
     print("\n--- Validation DataFrame Sample ---")
     print(val_df.head(n))
 
-
-# ----------------------#
-# 1. LOAD LOCAL DATA    #
-# ----------------------#
-
 def load_and_prepare_data():
-    # Load from Hugging Face dataset instead of local CSV
     dataset = load_dataset("predibase/wordle-grpo", split="train").to_pandas()
-
-    # Filter for valid 5-letter words only
     valid_rows = dataset[dataset['secret'].astype(str).str.len() == 5]
     valid_rows = valid_rows[valid_rows['secret'].str.isalpha()]
     logger.info(f"Total secrets in dataset: {len(dataset)}")
     logger.info(f"Secrets with length 5 and alphabetic only: {len(valid_rows)}")
-
-    # Split into train/validation (80/20 split)
     train_rows, val_rows = train_test_split(valid_rows, test_size=0.2, random_state=42)
     logger.info(f"Train set size: {len(train_rows)}, Validation set size: {len(val_rows)}")
-
-    # Use the prompt, secret, and past_guess_history columns directly from the dataset
     train_df = train_rows[['prompt', 'secret', 'past_guess_history']].rename(columns={'secret': 'secret_word'}).reset_index(drop=True)
     val_df = val_rows[['prompt', 'secret', 'past_guess_history']].rename(columns={'secret': 'secret_word'}).reset_index(drop=True)
     train_dataset = Dataset.from_pandas(train_df)
     val_dataset = Dataset.from_pandas(val_df)
-
-    # Inspect the data
     inspect_data(train_df, val_df)
- 
     return train_dataset, val_dataset
-
-# ----------------------#
-# 2. MODEL SETUP        #
-# ----------------------#
 
 def setup_model_and_tokenizer():
     load_dotenv()
     MODEL_NAME = os.getenv("HUGGINGFACE_MODEL_NAME").strip()
     HF_TOKEN = os.getenv("HUGGINGFACE_TOKEN").strip()
-    # local_rank, device = setup_distributed()
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, token=HF_TOKEN)
-    # model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, token=HF_TOKEN)
     model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, token=HF_TOKEN, device_map="auto")
-    model.train()  # Ensure model is in training mode for gradient checkpointing
-    tokenizer.pad_token = tokenizer.eos_token           # reuse EOS as PAD
+    model.train()
+    tokenizer.pad_token = tokenizer.eos_token
     tokenizer.pad_token_id = tokenizer.eos_token_id
-    model.config.pad_token_id = tokenizer.pad_token_id  # persist in model config
+    model.config.pad_token_id = tokenizer.pad_token_id
     logger.info(f"Loaded model: {MODEL_NAME}")
     return model, tokenizer
 
-# ----------------------#
-# 3. REWARD             #
-# ----------------------#
-
-
-# Reward function for GRPOTrainer
 def wordle_reward_func(completions, prompts=None, secret_word=None, past_guess_history=None, model=None, tokenizer=None, **kwargs):
-    """
-    For each sample, compute reward using the prompt, secret word, and past_guess_history directly.
-    Each reward function receives the raw completion for the final turn.
-    """
     rewards = []
     for i in range(len(prompts)):
         base_prompt = prompts[i]
@@ -117,65 +79,51 @@ def wordle_reward_func(completions, prompts=None, secret_word=None, past_guess_h
     logger.info(f"Rewards for batch: {rewards}")
     return rewards
 
-
-# ----------------------#
-# 4. MAIN               #
-# ----------------------#
-
-if __name__ == "__main__":
-
-    # Load the data
-    logger.info("Loading and preparing data...")
+def main(beta):
+    logger.info(f"Running training with KL beta={beta}")
     train_dataset, val_dataset = load_and_prepare_data()
-    logger.info("Data loaded and prepared.")
-
-    logger.info("Setting up model and tokenizer...")
     model, tokenizer = setup_model_and_tokenizer()
-    logger.info("Model and tokenizer setup complete.")
-
     def reward_func_with_model(*args, **kwargs):
         return wordle_reward_func(*args, model=model, tokenizer=tokenizer, **kwargs)
     reward_func_with_model.__name__ = "wordle_reward_func"
-
-    logger.info("Starting GRPO training script.")
-    
     training_args = GRPOConfig(
-        output_dir="outputs/wordle-grpo",
-        num_train_epochs=10,  # Number of epochs
-        per_device_train_batch_size=2,  # Batch size per device
-        per_device_eval_batch_size=8,   # Batch size for evaluation
-        gradient_accumulation_steps=4,       # Simulates batch size of 8
-        num_generations=8,       # Ensure batch size is divisible by generations
-        learning_rate=1e-6,             # Example learning rate
-        logging_steps=10,               # Log every 10 steps
-        save_steps=100,                 # Save checkpoint every 100 steps
-        eval_strategy="steps",   # Evaluate every eval_steps
-        eval_steps=50,                  # Evaluate every 50 steps
-        bf16=False,                     # Disable bfloat16 (A100 only)
-        fp16=True,                      # Use fp16
-        remove_unused_columns=False,    # Keep all columns for custom reward
-        max_prompt_length=1024,          # Truncate prompts if needed
-        max_completion_length=2048,     # Max length for completions (updated from 32)
-        seed=42,                        # Random seed
+        output_dir=f"outputs/wordle-grpo-klbeta{beta}",
+        num_train_epochs=10,
+        per_device_train_batch_size=1,
+        per_device_eval_batch_size=8,
+        gradient_accumulation_steps=8,
+        num_generations=8,
+        learning_rate=1e-6,
+        logging_steps=10,
+        save_steps=100,
+        eval_strategy="steps",
+        eval_steps=50,
+        bf16=False,
+        fp16=True,
+        remove_unused_columns=False,
+        max_prompt_length=1024,
+        max_completion_length=2048,
+        seed=42,
         gradient_checkpointing=False,
         save_strategy="steps",
         load_best_model_at_end=True,
-        metric_for_best_model="eval_loss",  # or your custom metric
-        greater_is_better=False,            # True if using reward as metric
-        logging_dir="outputs/wordle-grpo/logs",
-        report_to=["tensorboard", "wandb"],  # Enable logging to TensorBoard and WandB
-        run_name=f"wordle-grpo-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        temperature=1.2,  # Encourage more exploration
-        top_p=0.95,       # Nucleus sampling for diversity
-        top_k=40,         # Top-k sampling for diversity
-        repetition_penalty=1.1,  # Slight penalty to discourage repeats
+        metric_for_best_model="eval_loss",
+        greater_is_better=False,
+        logging_dir=f"outputs/wordle-grpo-klbeta{beta}/logs",
+        report_to=["tensorboard", "wandb"],
+        run_name=f"wordle-grpo-klbeta{beta}-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
+        temperature=1.2,
+        top_p=0.95,
+        top_k=40,
+        repetition_penalty=1.1,
+        beta=beta,
         generation_kwargs={
             "temperature": 1.2,
             "top_p": 0.95,
             "top_k": 40,
             "repetition_penalty": 1.1
         },
-        scale_rewards=False # Disable reward scaling for GRPO
+        use_liger_loss=True
     )
     trainer = GRPOTrainer(
         model=model,
@@ -183,12 +131,21 @@ if __name__ == "__main__":
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=val_dataset,
-        processing_class=tokenizer,  # ensure correct tokenization
+        processing_class=tokenizer,
     )
     trainer.train()
-    logger.info("TRL GRPOTrainer training complete.")
-
-    # Plot training and evaluation loss after training
+    logger.info(f"TRL GRPOTrainer training complete for KL beta={beta}.")
+    try:
+        wandb.finish()
+    except ImportError:
+        logger.warning("wandb not installed; skipping wandb.finish().")
+    del trainer
+    del model
+    del tokenizer
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+        torch.cuda.ipc_collect()
     try:
         from plot_loss import plot_loss
         log_file = os.path.join(training_args.output_dir, "trainer_state.jsonl")
@@ -197,4 +154,10 @@ if __name__ == "__main__":
         else:
             logger.warning(f"Log file {log_file} not found. Skipping loss plot.")
     except Exception as e:
-        logger.warning(f"Could not plot loss curves: {e}")
+        logger.warning(f"Could not plot loss curves for KL beta={beta}: {e}")
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--beta", type=float, required=True, help="KL beta value for GRPOConfig")
+    args = parser.parse_args()
+    main(args.beta)
