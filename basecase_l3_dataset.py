@@ -117,7 +117,7 @@ def render_prompt(past_guesses: List[GuessWithFeedback]):
 
 def generate_stream(prompt: str) -> str:
     logger.info("Generating model output for prompt.")
-    outputs = generator(prompt, max_new_tokens=256, do_sample=False)
+    outputs = generator(prompt, max_new_tokens=2048, do_sample=False)
     completion = outputs[0]["generated_text"][len(prompt):]
     logger.info(f"Model completion: {completion.strip()[:100]}")
     print(completion)

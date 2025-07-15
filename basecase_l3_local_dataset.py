@@ -8,6 +8,9 @@ from typing import List
 from logger_setup import logger
 from sklearn.model_selection import train_test_split
 
+from dotenv import load_dotenv
+from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
+
 # ----------------------#
 # 1. LOAD LOCAL DATA    #
 # ----------------------#
@@ -85,8 +88,7 @@ tags. Then, return your guessed word in the following format:
 # 4. MODEL SETUP        #
 # ----------------------#
 
-from dotenv import load_dotenv
-from transformers import pipeline, AutoTokenizer, AutoModelForCausalLM
+
 
 load_dotenv()
 MODEL_NAME = os.getenv("HUGGINGFACE_MODEL_NAME").strip()
@@ -124,7 +126,7 @@ def render_prompt(past_guesses: List[GuessWithFeedback]):
 
 def generate_stream(prompt: str) -> str:
     logger.info("Generating model output for prompt.")
-    outputs = generator(prompt, max_new_tokens=256, do_sample=False)
+    outputs = generator(prompt, max_new_tokens=2048, do_sample=False)
     completion = outputs[0]["generated_text"][len(prompt):]
     logger.info(f"Model completion: {completion.strip()[:100]}")
     print(completion)

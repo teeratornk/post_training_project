@@ -1,16 +1,21 @@
 $schema: https://azuremlschemas.azureedge.net/latest/commandJob.schema.json
 
 command: >-
-  python launch_temperature_sweep.py
+  python grpo_local_data_peft.py
 
 environment: azureml:tkad15-grpo@latest
-compute: azureml:tkad15-8-v100-sc
-experiment_name: temp17
+compute: azureml:tkad15-8-v100-westus2
+experiment_name: qwen7b-grpo-peft-training
 resources:
-  instance_count: 2
+  instance_count: 3
 
 environment_variables:
   PYTORCH_CUDA_ALLOC_CONF: "expandable_segments:True"
+
+# inputs:
+#   model_path:
+#     type: uri_folder
+#     path: azureml:qwen7b-grpo:1
 
 # distribution:
 #   type: pytorch

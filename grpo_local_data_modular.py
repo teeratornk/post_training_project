@@ -141,14 +141,14 @@ if __name__ == "__main__":
     
     training_args = GRPOConfig(
         output_dir="outputs/wordle-grpo",
-        num_train_epochs=10,  # Number of epochs
+        num_train_epochs=6,  # Number of epochs
         per_device_train_batch_size=2,  # Batch size per device
         per_device_eval_batch_size=8,   # Batch size for evaluation
         gradient_accumulation_steps=4,       # Simulates batch size of 8
         num_generations=8,       # Ensure batch size is divisible by generations
         learning_rate=1e-6,             # Example learning rate
-        logging_steps=10,               # Log every 10 steps
-        save_steps=100,                 # Save checkpoint every 100 steps
+        logging_steps=50,               # Log every 50 steps
+        # save_steps=300,                 # Save checkpoint every 300 steps
         eval_strategy="steps",   # Evaluate every eval_steps
         eval_steps=50,                  # Evaluate every 50 steps
         bf16=False,                     # Disable bfloat16 (A100 only)
@@ -158,19 +158,19 @@ if __name__ == "__main__":
         max_completion_length=2048,     # Max length for completions (updated from 32)
         seed=42,                        # Random seed
         gradient_checkpointing=False,
-        save_strategy="steps",
+        # save_strategy="steps",
         load_best_model_at_end=True,
         metric_for_best_model="eval_loss",  # or your custom metric
         greater_is_better=False,            # True if using reward as metric
         logging_dir="outputs/wordle-grpo/logs",
         report_to=["tensorboard", "wandb"],  # Enable logging to TensorBoard and WandB
         run_name=f"wordle-grpo-{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}",
-        temperature=1.2,  # Encourage more exploration
+        temperature=1.7,  # Encourage more exploration
         top_p=0.95,       # Nucleus sampling for diversity
         top_k=40,         # Top-k sampling for diversity
         repetition_penalty=1.1,  # Slight penalty to discourage repeats
         generation_kwargs={
-            "temperature": 1.2,
+            "temperature": 1.7,
             "top_p": 0.95,
             "top_k": 40,
             "repetition_penalty": 1.1
@@ -188,6 +188,30 @@ if __name__ == "__main__":
     trainer.train()
     logger.info("TRL GRPOTrainer training complete.")
 
+    # Always save the final model and tokenizer at the end, regardless of checkpoint status
+    final_model_dir = os.path.join(training_args.output_dir, "final_model")
+    if not os.path.exists(final_model_dir):
+        os.makedirs(final_model_dir)
+    model.save_pretrained(final_model_dir)
+    tokenizer.save_pretrained(final_model_dir)
+    logger.info(f"Final model and tokenizer saved to: {final_model_dir}")
+
+    # Find and log the best model checkpoint
+    if hasattr(trainer, 'state') and hasattr(trainer.state, 'best_model_checkpoint'):
+        best_ckpt = trainer.state.best_model_checkpoint
+        if best_ckpt:
+            logger.info(f"Best model checkpoint found at: {best_ckpt}")
+            best_model_dir = os.path.join(training_args.output_dir, "best_model")
+            if not os.path.exists(best_model_dir):
+                os.makedirs(best_model_dir)
+            model.save_pretrained(best_model_dir)
+            tokenizer.save_pretrained(best_model_dir)
+            logger.info(f"Best model saved to: {best_model_dir}")
+        else:
+            logger.warning("No best model checkpoint found.")
+    else:
+        logger.warning("Trainer does not have best_model_checkpoint attribute.")
+
     # Plot training and evaluation loss after training
     try:
         from plot_loss import plot_loss
@@ -198,3 +222,8 @@ if __name__ == "__main__":
             logger.warning(f"Log file {log_file} not found. Skipping loss plot.")
     except Exception as e:
         logger.warning(f"Could not plot loss curves: {e}")
+
+    # Inspect trainer.state attributes for debugging
+    logger.info(f"Trainer.state: {trainer.state}")
+    for k, v in trainer.state.__dict__.items():
+        logger.info(f"trainer.state.{k}: {v}")
